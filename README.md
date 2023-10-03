@@ -27,7 +27,7 @@ The first part of the name is pretty obvious: _"msx"_ as this is an adapter for 
 The _"dolphin"_ part comes from the project codename assigned to the Nintendo Gamecube during its development.
 
 
-## [Hardware](hardware/kicad/msx-joydolphin-v1.kicad_pro)
+## [Hardware](hardware/kicad/)
 
 The msx-joydolphin v1 adapter uses an [Arduino Nano](https://store.arduino.cc/products/arduino-nano) to convert the [Nintendo Gamecube controller signalling](http://www.int03.co.uk/crema/hardware/gamecube/gc-control.html) to the [MSX joystick standard signalling](https://www.msx.org/wiki/Joystick_control).
 
@@ -95,7 +95,7 @@ As the Arduino Nano is a 5V logic microcontroller, the msx-joydolphin adapter us
 > The game controller may get damaged if you connect a 5V signal directly to the 3.3V DAT line.
 
 
-## [Firmware](firmware/msx-joydolphin-v1/msx-joydolphin-v1.ino)
+## [Firmware](firmware/msx-joydolphin-v1/)
 
 The msx-joydolphin v1 adapter firmware uses [NicoHood's Nintendo library](https://github.com/NicoHood/Nintendo) to read the Nintendo Gamecube controller status, and it is heavily inspired on [Daniel Jose Viana "Danjovic" firmware](https://github.com/Danjovic/MSX/blob/master/NSX-64) for a similar adapter for Nintendo 64 joysticks.
 
@@ -110,7 +110,7 @@ Those elements' status are processed by the msx-joydolphin firmware and transfor
 The firmware uses Arduino Nano's sleep capabilities to reduce power consumption.
 
 
-## [Enclosure](enclosure/msx-joydolphin-v1-case.dxf)
+## [Enclosure](enclosure/)
 
 A simple acrylic enclosure design for the project is provided to protect the electronics components and provide strain relief for the extension cords.
 
@@ -135,8 +135,6 @@ Nico Hood Nintendo Gamecube Joystick arduino library
 
 Daniel Jose Viana "Danjovic" NSX-64 project
 * https://github.com/Danjovic/MSX/blob/master/NSX-64
-
-https://github.com/Danjovic/MSX/blob/master/NSX-64
 
 Gamecube controller IDs
 * https://www.gc-forever.com/yagcd/chap9.html#sec9

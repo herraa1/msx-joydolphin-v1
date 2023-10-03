@@ -37,6 +37,10 @@
  */
 #define _10ms   2499 /* OCR1 values for sleep period */
 
+/* Nintendo Gamecube controller pad axis valid range */
+#define GCN_AXIS_MIN 0
+#define GCN_AXIS_MAX 255
+
 /*
  * Arduino Nano pins for MSX signals.
  * Use PORTB for all MSX joystick arrow and buttons signals.
@@ -45,25 +49,22 @@
 #define PORT_MSX_JOYSTICK PORTB
 #define DDR_MSX_JOYSTICK  DDRB
 
-/* Nintendo Gamecube controller pad axis valid range */
-#define GCN_AXIS_MIN 0
-#define GCN_AXIS_MAX 255
+/* MSX general purpose signals as mapped to Arduino Nano PORTB bits */
+const int MSX_JOYSTICK_UP       = 0; /* PB0, MSX joystick pin1 */
+const int MSX_JOYSTICK_DOWN     = 1; /* PB1, MSX joystick pin2 */
+const int MSX_JOYSTICK_LEFT     = 2; /* PB2, MSX joystick pin3 */
+const int MSX_JOYSTICK_RIGHT    = 3; /* PB3, MSX joystick pin4 */
+const int MSX_JOYSTICK_TRIGGER1 = 4; /* PB4, MSX joystick pin6 */
+const int MSX_JOYSTICK_TRIGGER2 = 5; /* PB5, MSX joystick pin7 */
 
-/* MSX general purpose signals, pin numbers from MSX side */
-const int MSX_JOYSTICK_UP       = 0; /* pin1 */
-const int MSX_JOYSTICK_DOWN     = 1; /* pin2 */
-const int MSX_JOYSTICK_LEFT     = 2; /* pin3 */
-const int MSX_JOYSTICK_RIGHT    = 3; /* pin4 */
-const int MSX_JOYSTICK_TRIGGER1 = 4; /* pin6 */
-const int MSX_JOYSTICK_TRIGGER2 = 5; /* pin7 */
-
-const int MSX_JOYSTICK_STROBE   = 2; /* pin8, not used for now */
+/* Arduino Nano pin for MSX joystick pin8 signal */
+const int MSX_JOYSTICK_STROBE   = 2; /* PD2, MSX joystick pin8, not used for now */
 
 /* Arduino Nano LED pin */
 const int status_led_pin        = LED_BUILTIN;
 
 /* Nintendo Gamecube joystick controller */
-CGamecubeController GamecubeController1(7);
+CGamecubeController GamecubeController1(7); /* PD7 for DAT I/O */
 
 /*
  * Discrete thresholds for Nintengo Gamecube joystick analog pad axis:
@@ -120,7 +121,7 @@ void setup()
 
     /*
      * Calculate Nintendo Gamecube controller analog pad thresholds.
-     * Analog pad need to be pushed from its origin in one direction at least
+     * Analog pad needs to be pushed from its origin in one direction at least
      * 1/6 of the complete run to get active
      */
     axis_threshold = (GCN_AXIS_MAX - GCN_AXIS_MIN) /3;
