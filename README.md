@@ -15,9 +15,10 @@ The main features of the msx-joydolphin v1 adapter are:
 * behaves as a cord extension between the MSX computer and the Nintendo Gamecube controller
 * uses a female standard DE9 connector on the adapter's MSX joystick side
 * uses a Gamecube Controller socket on the adapter's Nintendo Gamecube controller side
-* no need for external power supply, the adapter draws current from the MSX port
-* low power consumption (<20mA)
-* status led provides information about the operation of the adapter
+* no need for external power supply for wired controllers, the adapter draws current from the MSX port
+* low power consumption for wired controllers (<20mA)
+* TX led provides information about the operation of the adapter
+* support for WaveBird Wireless Controllers (which draw up to 150mA) when powering the adapter via USB
 
 
 ## Adapter Name
@@ -62,9 +63,9 @@ The MSX joystick extension cable loose end is wired according to the following p
 | 9            | Yellow                 | GND    | _/GND/4,29                          |
 
 Power is drawn from the +5V signal of the MSX general purpose port, which is capable of delivering up to 50mA [^1].
-The msx-joydolphin v1 draws below 20mA from the port, so it is on the safe side. Anyway, the msx-joydolphin adapter uses a Positive Temperature Coeficient (PTC) resettable fuse of 50mA (F1) to limit current in case something goes wrong.
+The msx-joydolphin v1 draws below 20mA from the port when a wired controller is connected, so it is on the safe side. Anyway, the msx-joydolphin adapter uses a Positive Temperature Coeficient (PTC) resettable fuse of 50mA (F1) to limit current in case something goes wrong.
 
-Also on the power side, a [1N5817 Schottky diode](https://www.onsemi.com/download/data-sheet/pdf/1n5817-d.pdf) (D1) is used to avoid leaking current from the msx-joydolphin adapter to the MSX in case the USB port of the Arduino Nano is connected to a computer while the adapter is plugged into an MSX.
+Also on the power side, a [1N5817 Schottky diode](https://www.onsemi.com/download/data-sheet/pdf/1n5817-d.pdf) (D1) is used to avoid leaking current from the msx-joydolphin adapter to the MSX in case the USB port of the Arduino Nano is connected to a computer or power supply while the adapter is plugged into an MSX.
 
 Connection to the Nintendo Gamecube controller is done via a Nintendo Gamecube controller extension cable with a controller socket on one side and a loose end on the other side.
 The Nintendo Gamecube controller extension cable loose end is wired according to the following pinout mapping.
@@ -86,7 +87,7 @@ The Nintendo Gamecube controller extension cable loose end is wired according to
 
 The Nintendo Gamecube controller uses 3.3V for power and logic, except for the rumble motor which uses 5V.
 
-Power for the Nintendo Gamecube controller is provided by the 3.3V pin of the FT232RL integrated in the Arduino Nano, which is capable of delivering up to 50mA [^2], enough to power the game controller.
+Power for the Nintendo Gamecube controller is provided by the 3.3V pin of the FT232RL integrated in the Arduino Nano, which is capable of delivering up to 50mA [^2], enough to power a wired game controller.
 
 As the Arduino Nano is a 5V logic microcontroller, the msx-joydolphin adapter uses a voltage level shifter based on the [BSS138 N-Channel Logic Level Enhancement Mode Field Effect Transistor](https://www.onsemi.com/pdf/datasheet/bss138-d.pdf) (Q1) to convert the Nintendo Gamecube controller DAT signal between 3.3V and 5V logic levels.
 
@@ -94,6 +95,9 @@ As the Arduino Nano is a 5V logic microcontroller, the msx-joydolphin adapter us
 > Do NOT connect the DAT line of the Nintendo Gamecube controller to the Arduino Nano directly, always use a voltage level shifter.
 > The game controller may get damaged if you connect a 5V signal directly to the 3.3V DAT line.
 
+If a WaveBird Wireless Controller is connected then the msx-joydolphin adapter needs to be powered via the mini USB port of the Arduino Nano, as the power consumption (150mA) is higher than what the MSX joystick port can deliver.
+Althought it won't work, it is safe to connect a WaveBird Wireless Controller dongle without connecting an external USB power supply thanks to the current limitation of the PTC.
+Also, connection of an external USB power supply to the Arduino Nano won't back-power the MSX computer thanks to the Schottky diode reverse current protection.
 
 ## [Firmware](firmware/msx-joydolphin-v1/)
 
@@ -107,12 +111,13 @@ The following elements are used as inputs:
 
 Those elements' status are processed by the msx-joydolphin firmware and transformed into MSX general purpose port's signals on the fly.
 
-The firmware uses Arduino Nano's sleep capabilities to reduce power consumption.
+The firmware uses Arduino Nano's sleep capabilities to reduce power consumption when a wired controller is used.
 
 
 ## [Enclosure](enclosure/)
 
 A simple acrylic enclosure design for the project is provided to protect the electronics components and provide strain relief for the extension cords.
+Later designs of the enclosure allow access to the USB port of the Arduino Nano without having to open it.
 
 The enclosure uses a 3mm acrylic sheet.
 
