@@ -60,11 +60,11 @@ const int PORT_MSX_JOYSTICK_TRIGGER2 = 5; /* PB5, MSX joystick pin7 */ /* LED_BU
 /* Arduino Nano pin for MSX joystick pin8 signal */
 const int MSX_JOYSTICK_STROBE   = 2; /* PD2, MSX joystick pin8, not used for now */
 
-/* Arduino Nano LED pin */
-const int status_led_pin        = LED_BUILTIN;
-
 /* Nintendo Gamecube joystick controller */
 CGamecubeController GamecubeController1(7); /* PD7 for DAT I/O */
+
+/* sleeping while a wavebird is connected doesn't work reliably */
+volatile bool sleep_is_safe = false;
 
 /*
  * Discrete thresholds for Nintengo Gamecube joystick analog pad axis:
@@ -75,13 +75,8 @@ CGamecubeController GamecubeController1(7); /* PD7 for DAT I/O */
  */
 int axis_threshold_min, axis_threshold_max;
 
-/*
- * We use the status led to indicate different conditions:
- * - continuous on  : pad or button pressed
- * - continuous off : pad or button not pressed
- * - blinking       : Nintengo Gamecube controller is not connected
- */
-int status_led_state = LOW;
+/* serial output width control */
+uint8_t output_width_count = 0;
 
 /*
  * Timer 1 CTC Interrupt handler
@@ -110,14 +105,52 @@ inline void set_timer1(uint16_t overflow_ticks)
     sei(); /* enable interrupts */
 }
 
+void print_hex8(uint8_t data)
+{
+    char tmp[2+1];
+    byte nibble;
+
+    nibble = (data >> 4) | 48;
+    tmp[0] = (nibble > 57) ? nibble + (byte)39 : nibble;
+    nibble = (data & 0x0f) | 48;
+    tmp[1] = (nibble > 57) ? nibble + (byte)39 : nibble;
+    tmp[2] = 0;
+
+    Serial.print(tmp);
+}
+
+void print_hex16(uint16_t data)
+{
+    print_hex8((uint8_t)(data >> 8));
+    print_hex8((uint8_t)(data & 0xff));
+}
+
+void print_rolling_sequence(void)
+{
+    static char rolling_chars[] = { '-', '\\', '|', '/' };
+    static uint8_t rolling_index = 0;
+
+    //Serial.write(8);
+    Serial.print(rolling_chars[rolling_index++]);
+    if (rolling_index >= sizeof(rolling_chars))
+        rolling_index = 0;
+}
+
+inline bool is_wired_controller(uint16_t device)
+{
+    return (device & 0xff) == 0x09;
+}
+
 void setup()
 {
     int axis_threshold;
 
-    pinMode(status_led_pin, OUTPUT);
+    /* initialize joystick signals */
+    update_msx_signals(0xff);
 
-    GamecubeController1.begin(); /* initialize controller */
-    delayMicroseconds(100);      /* allow some time for initialization */ 
+    /* use the serial port for debugging purposes */
+    Serial.begin(9600);
+    Serial.println("msx-joydolphin-v1");
 
     /*
      * Calculate Nintendo Gamecube controller analog pad thresholds.
@@ -128,54 +161,51 @@ void setup()
     axis_threshold_min = GCN_AXIS_MIN + axis_threshold;
     axis_threshold_max = GCN_AXIS_MAX - axis_threshold;
 
-    /* use the serial port for debugging purposes */
-    Serial.begin(9600);
-    Serial.println("msx-joydolphin-v1");
-
-    /* initialize the status led state */
-    digitalWrite(status_led_pin, status_led_state);
+    GamecubeController1.begin(); /* initialize controller */
+    delayMicroseconds(100);      /* allow some time for initialization */
 
     /* setup Timer 1 to wake up processor */
     set_timer1(_10ms);
-
 }
 
 void loop()
 {
     loop_gamecube_controller();
 
-    /* put CPU to sleep */
-    set_sleep_mode(SLEEP_MODE_IDLE);
-    sleep_enable();
+    if (sleep_is_safe) {
+        /* put CPU to sleep */
+        set_sleep_mode(SLEEP_MODE_IDLE);
+        sleep_enable();
 
-    /*
-     * Note: As Timer 0 is used by Arduino housekeeping it should be turned off
-     * otherwise it will wake up CPU and hassle the interrupt interleave
-     * mechanism used by this code
-     */
-    power_timer0_disable();
+        /*
+        * Note: As Timer 0 is used by Arduino housekeeping it should be turned off
+        * otherwise it will wake up CPU and hassle the interrupt interleave
+        * mechanism used by this code
+        */
+        power_timer0_disable();
 
-    sleep_mode();
-    sleep_disable();
+        sleep_mode();
+        sleep_disable();
+    }
 }
 
-void cycle_led_status(void)
-{
-    /* invert status led state */
-    if (status_led_state == LOW)
-        status_led_state = HIGH;
-    else
-        status_led_state = LOW;
-    digitalWrite(status_led_pin, status_led_state);
-}
-
+/*
+ * We use the TX led to indicate different conditions:
+ * - continuous on  : pad or button pressed
+ * - continuous off : pad or button not pressed
+ * - fast blinking  : Nintengo Gamecube controller is not connected or
+ *                    Wavebird not linked
+ */
 void update_led_status(uint8_t signals)
 {
-    /* turn on the led only if there is any button/pad active */
-    if ((signals & 0xff) != 0xff) {
-        digitalWrite(status_led_pin, HIGH);
-    } else {
-        digitalWrite(status_led_pin, LOW);
+    /* turn on the TX led only if there is any button/pad active */
+    if (signals != 0xff) {
+        print_hex8(signals);
+        output_width_count += 2;
+        if (output_width_count > 79) {
+            output_width_count = 0;
+            Serial.println("");
+        }
     }
 }
 
@@ -188,11 +218,10 @@ inline void update_msx_signals(uint8_t signals)
 
 void loop_gamecube_controller()
 {
-    static uint8_t output_width_count = 0;
     static bool was_connected = false;
     bool is_connected;
-
-    Gamecube_Report_t report;
+    uint16_t device;
+        Gamecube_Report_t report;
 
     /*
      * MSX joystick signals:
@@ -203,21 +232,27 @@ void loop_gamecube_controller()
 
     is_connected = GamecubeController1.connected();
     if (!is_connected) {
-        /* write ping failed char while not connected */
-        Serial.print("!");
+        /* write rolling sequence while not connected */
+        print_rolling_sequence();
         /* wrap output at 80 columns ... */
         if (output_width_count++ > 79) {
             output_width_count = 0;
             Serial.println("");
         }
-        cycle_led_status();
         was_connected = false;
     } else {
         if (!was_connected) {
-            Serial.println("READY!");
+            Serial.print("READY ");
+            device = GamecubeController1.getStatus().device;
+            print_hex16(device);
+            /* sleep is safe only for wired controllers */
+            sleep_is_safe = is_wired_controller(device);
+            if (sleep_is_safe)
+                Serial.print(" sleeping");
+            Serial.println("!");
             output_width_count = 0;
+            was_connected = true;
         }
-        was_connected = true;
     }
 
     if (GamecubeController1.read()) {
