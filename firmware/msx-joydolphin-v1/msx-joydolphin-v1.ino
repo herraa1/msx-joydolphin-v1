@@ -50,12 +50,12 @@
 #define DDR_MSX_JOYSTICK  DDRB
 
 /* MSX general purpose signals as mapped to Arduino Nano PORTB bits */
-const int MSX_JOYSTICK_UP       = 0; /* PB0, MSX joystick pin1 */
-const int MSX_JOYSTICK_DOWN     = 1; /* PB1, MSX joystick pin2 */
-const int MSX_JOYSTICK_LEFT     = 2; /* PB2, MSX joystick pin3 */
-const int MSX_JOYSTICK_RIGHT    = 3; /* PB3, MSX joystick pin4 */
-const int MSX_JOYSTICK_TRIGGER1 = 4; /* PB4, MSX joystick pin6 */
-const int MSX_JOYSTICK_TRIGGER2 = 5; /* PB5, MSX joystick pin7 */
+const int PORT_MSX_JOYSTICK_UP       = 0; /* PB0, MSX joystick pin1 */
+const int PORT_MSX_JOYSTICK_DOWN     = 1; /* PB1, MSX joystick pin2 */
+const int PORT_MSX_JOYSTICK_LEFT     = 2; /* PB2, MSX joystick pin3 */
+const int PORT_MSX_JOYSTICK_RIGHT    = 3; /* PB3, MSX joystick pin4 */
+const int PORT_MSX_JOYSTICK_TRIGGER1 = 4; /* PB4, MSX joystick pin6 */
+const int PORT_MSX_JOYSTICK_TRIGGER2 = 5; /* PB5, MSX joystick pin7 */ /* LED_BUILTIN */
 
 /* Arduino Nano pin for MSX joystick pin8 signal */
 const int MSX_JOYSTICK_STROBE   = 2; /* PD2, MSX joystick pin8, not used for now */
@@ -225,19 +225,19 @@ void loop_gamecube_controller()
 
         /* Directional buttons (D-Pad) */
         if (report.dup) {
-            msx_joystick_signals &= ~(1<<MSX_JOYSTICK_UP);
+            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_UP);
             DEBUG_PRINTLN("DUP");
         }
         if (report.ddown) {
-            msx_joystick_signals &= ~(1<<MSX_JOYSTICK_DOWN);
+            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_DOWN);
             DEBUG_PRINTLN("DDOWN");
         }
         if (report.dleft) {
-            msx_joystick_signals &= ~(1<<MSX_JOYSTICK_LEFT);
+            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_LEFT);
             DEBUG_PRINTLN("DLEFT");
         }
         if (report.dright) {
-            msx_joystick_signals &= ~(1<<MSX_JOYSTICK_RIGHT);
+            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_RIGHT);
             DEBUG_PRINTLN("DRIGHT");
         }
 
@@ -247,34 +247,34 @@ void loop_gamecube_controller()
          */
 
         /* before activating UP check that DOWN is not activated */
-        if ((report.yAxis > axis_threshold_max) && (msx_joystick_signals & (1<<MSX_JOYSTICK_DOWN))) {
-            msx_joystick_signals &= ~(1<<MSX_JOYSTICK_UP);
+        if ((report.yAxis > axis_threshold_max) && (msx_joystick_signals & (1<<PORT_MSX_JOYSTICK_DOWN))) {
+            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_UP);
             DEBUG_PRINTLN("UP");
         }
         /* before activating DOWN check that UP is not activated */
-        if ((report.yAxis < axis_threshold_min) && (msx_joystick_signals & (1<<MSX_JOYSTICK_UP))) {
-            msx_joystick_signals &= ~(1<<MSX_JOYSTICK_DOWN);
+        if ((report.yAxis < axis_threshold_min) && (msx_joystick_signals & (1<<PORT_MSX_JOYSTICK_UP))) {
+            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_DOWN);
             DEBUG_PRINTLN("DOWN");
         }
 
         /* before activating LEFT check that RIGHT is not activated */
-        if ((report.xAxis < axis_threshold_min) && (msx_joystick_signals & (1<<MSX_JOYSTICK_RIGHT))) {
-            msx_joystick_signals &= ~(1<<MSX_JOYSTICK_LEFT);
+        if ((report.xAxis < axis_threshold_min) && (msx_joystick_signals & (1<<PORT_MSX_JOYSTICK_RIGHT))) {
+            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_LEFT);
             DEBUG_PRINTLN("LEFT");
         }
         /* before activating RIGHT check that LEFT is not activated */
-        if ((report.xAxis > axis_threshold_max) && (msx_joystick_signals & (1<<MSX_JOYSTICK_LEFT))) {
-            msx_joystick_signals &= ~(1<<MSX_JOYSTICK_RIGHT);
+        if ((report.xAxis > axis_threshold_max) && (msx_joystick_signals & (1<<PORT_MSX_JOYSTICK_LEFT))) {
+            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_RIGHT);
             DEBUG_PRINTLN("RIGHT");
         }
 
         /* trigger buttons */
         if (report.a) {
-            msx_joystick_signals &= ~(1<<MSX_JOYSTICK_TRIGGER1);
+            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_TRIGGER1);
             DEBUG_PRINTLN("TRIG1");
         }
         if (report.b) {
-            msx_joystick_signals &= ~(1<<MSX_JOYSTICK_TRIGGER2);
+            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_TRIGGER2);
             DEBUG_PRINTLN("TRIG2");
         }
 
