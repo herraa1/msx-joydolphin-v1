@@ -24,7 +24,7 @@
 /*
  * Debugging helpers
  */
-#define DEBUG 1
+/* #define DEBUG */
 
 #ifdef DEBUG
   #define DEBUG_PRINTLN(x)  Serial.println (x)
