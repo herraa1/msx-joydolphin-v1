@@ -221,7 +221,7 @@ void loop_gamecube_controller()
     static bool was_connected = false;
     bool is_connected;
     uint16_t device;
-        Gamecube_Report_t report;
+    Gamecube_Report_t report;
 
     /*
      * MSX joystick signals:
