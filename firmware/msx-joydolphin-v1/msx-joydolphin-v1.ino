@@ -162,7 +162,7 @@ void setup()
     axis_threshold_max = GCN_AXIS_MAX - axis_threshold;
 
     GamecubeController1.begin(); /* initialize controller */
-    delayMicroseconds(100);      /* allow some time for initialization */
+    //delayMicroseconds(100);      /* allow some time for initialization */
 
     /* setup Timer 1 to wake up processor */
     set_timer1(_10ms);
@@ -189,31 +189,11 @@ void loop()
     }
 }
 
-/*
- * We use the TX led to indicate different conditions:
- * - continuous on  : pad or button pressed
- * - continuous off : pad or button not pressed
- * - fast blinking  : Nintengo Gamecube controller is not connected or
- *                    Wavebird not linked
- */
-void update_led_status(uint8_t signals)
-{
-    /* turn on the TX led only if there is any button/pad active */
-    if (signals != 0xff) {
-        print_hex8(signals);
-        output_width_count += 2;
-        if (output_width_count > 79) {
-            output_width_count = 0;
-            Serial.println("");
-        }
-    }
-}
-
 inline void update_msx_signals(uint8_t signals)
 {
     /* write all signal states at once to MSX side */
     PORT_MSX_JOYSTICK = signals;
-    DDR_MSX_JOYSTICK = ~signals;
+    DDR_MSX_JOYSTICK = (~signals) | (1<<PORT_MSX_JOYSTICK_TRIGGER2);
 }
 
 void loop_gamecube_controller()
@@ -317,7 +297,6 @@ void loop_gamecube_controller()
          * update led status state after a successfull Nintendo Gamecube
          * controller update
          */
-        update_led_status(msx_joystick_signals);
     }
 
     /* unconditionally update MSX joystick signals */
