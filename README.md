@@ -17,7 +17,7 @@ The main features of the msx-joydolphin v1 adapter are:
 * uses a Gamecube Controller socket on the adapter's Nintendo Gamecube controller side
 * no need for external power supply for wired controllers, the adapter draws current from the MSX port
 * low power consumption for wired controllers (<20mA)
-* TX led provides information about the operation of the adapter
+* builtin led provides information about the operation of the adapter
 * supports WaveBird Wireless Controllers (which draw up to 150mA) when powering the adapter via USB
 
 
