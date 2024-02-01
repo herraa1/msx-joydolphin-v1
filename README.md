@@ -84,7 +84,6 @@ The Nintendo Gamecube controller extension cable loose end is wired according to
 | 6                   | Blue                 | Green                         | 3.43v  | power line, 3v3                                                           | _/3v3/17                            |
 | 7                   | Black                | N/A                           | GND    | ground                                                                    | N/C                                 |
 
-
 The Nintendo Gamecube controller uses 3.3V for power and logic, except for the rumble motor which uses 5V.
 
 Power for the Nintendo Gamecube controller is provided by the 3.3V pin of the FT232RL integrated in the Arduino Nano, which is capable of delivering up to 50mA [^2], enough to power a wired game controller.
@@ -98,6 +97,7 @@ As the Arduino Nano is a 5V logic microcontroller, the msx-joydolphin adapter us
 If a WaveBird Wireless Controller is connected then the msx-joydolphin adapter needs to be powered via the mini USB port of the Arduino Nano, as the power consumption (150mA) is higher than what the MSX joystick port can deliver.
 Althought it won't work, it is safe to connect a WaveBird Wireless Controller dongle without connecting an external USB power supply thanks to the current limitation of the PTC.
 Also, connection of an external USB power supply to the Arduino Nano won't back-power the MSX computer thanks to the Schottky diode reverse current protection.
+
 
 ## [Firmware](firmware/msx-joydolphin-v1/)
 
@@ -116,10 +116,28 @@ The firmware uses Arduino Nano's sleep capabilities to reduce power consumption 
 
 ## [Enclosure](enclosure/)
 
+### Acrylic
+
 A simple acrylic enclosure design for the project is provided to protect the electronics components and provide strain relief for the extension cords.
-Later designs of the enclosure allow access to the USB port of the Arduino Nano without having to open it.
 
 The enclosure uses a 3mm acrylic sheet.
+
+[<img src="images/msx-joydolphin-v1-acrylic-case-closed-0.png" width="400"/>](images/msx-joydolphin-v1-acrylic-case-closed-0.png)
+[<img src="images/msx-joydolphin-v1-acrylic-case-open-0.png" width="400"/>](images/msx-joydolphin-v1-acrylic-case-open-0.png)
+[<img src="images/msx-joydolphin-v1-acrylic-case-open-1.png" width="400"/>](images/msx-joydolphin-v1-acrylic-case-open-1.png)
+
+Later designs of the enclosure allow access to the USB port of the Arduino Nano without having to open it.
+
+[<img src="images/msx-joydolphin-v1-acrylic-case-closed-usb-side.png" height="300"/>](images/msx-joydolphin-v1-acrylic-case-closed-usb-side.png)
+
+### Plastic
+
+Another enclosure option is using an off-the-shelf plastic case of 60x36x17mm.
+
+When using this option, the Arduino Nano must be soldered directly to the msx-joydolphin v1 board and its pin header legs must be trimmed down in order to fit within the reduced space of the case.
+
+[<img src="images/msx-joydolphin-v1-plastic-case-closed.png" width="400"/>](images/msx-joydolphin-v1-plastic-case-closed.png)
+[<img src="images/msx-joydolphin-v1-plastic-case-open.png" width="400"/>](images/msx-joydolphin-v1-plastic-case-open.png)
 
 
 ## References
@@ -146,6 +164,7 @@ Gamecube controller IDs
 
 [^1]: https://www.msx.org/wiki/General_Purpose_port
 [^2]: https://www.mouser.es/datasheet/2/163/DS_FT232R-11534.pdf
+
 
 ## Image Sources
 
