@@ -16,6 +16,20 @@
  * - https://www.msx.org/wiki/General_Purpose_port
  */
 
+/*
+ * NOTE
+ *
+ * The msx-joydolphin v1 adapter does not follow the joystick circuit diagram described in the
+ * MSX Technical Data Book (Page 27, "1.4.6 Joysticks").
+ *
+ * The adapter puts signals for joystick arrows/buttons in high impedance mode (disconnected, pulled up to +5V by MSX pull-ups)
+ * except if Pin8 is LOW and arrows/buttons are pressed in which case the corresponding signals are pulled down to GND.
+ * Those signals are _never_ pulled down to GND if Pin8 is HIGH.
+ *
+ * As Pin8 level must be LOW to detect if joystick arrows/buttons are pressed, this is functionally equivalent to a standard
+ * MSX joystick. But this adapter does not use directly Pin8 as a common signal: instead it uses GND when Pin8 is LOW (set to GND).
+ */
+
 #include <avr/sleep.h>
 #include <avr/power.h>
 #include <avr/interrupt.h>
@@ -58,7 +72,7 @@ const int PORT_MSX_JOYSTICK_TRIGGER1 = 4; /* PB4, MSX joystick pin6 */
 const int PORT_MSX_JOYSTICK_TRIGGER2 = 5; /* PB5, MSX joystick pin7 */ /* LED_BUILTIN */
 
 /* Arduino Nano pin for MSX joystick pin8 signal */
-const int MSX_JOYSTICK_STROBE   = 2; /* PD2, MSX joystick pin8, not used for now */
+const int MSX_JOYSTICK_STROBE   = 2; /* PD2, MSX joystick pin8 */
 
 /* Nintendo Gamecube joystick controller */
 CGamecubeController GamecubeController1(7); /* PD7 for DAT I/O */
@@ -145,8 +159,9 @@ void setup()
 {
     int axis_threshold;
 
-    /* initialize joystick signals */
-    update_msx_signals(0xff);
+    /* initialize all joystick signals to high impedance */
+    pinMode(MSX_JOYSTICK_STROBE, INPUT_PULLUP);
+    __update_msx_signals(0xff);
 
     /* use the serial port for debugging purposes */
     Serial.begin(9600);
@@ -162,7 +177,7 @@ void setup()
     axis_threshold_max = GCN_AXIS_MAX - axis_threshold;
 
     GamecubeController1.begin(); /* initialize controller */
-    //delayMicroseconds(100);      /* allow some time for initialization */
+    delayMicroseconds(100);      /* allow some time for initialization */
 
     /* setup Timer 1 to wake up processor */
     set_timer1(_10ms);
@@ -189,11 +204,89 @@ void loop()
     }
 }
 
-inline void update_msx_signals(uint8_t signals)
+inline void __update_msx_signals(uint8_t signals)
 {
+    /*
+     * signals
+     * bit5  bit4  bit3  bit2  bit1  bit0
+     * TRG2  TRG1  RIGHT LEFT  DOWN  UP
+     *
+     * - bit set   : joystick arrow/button is not pressed
+     *               configure associated GPIO as HIGH/INPUT (high impedance, logic "Z")
+     * - bit unset : joystick arrow/button is pressed
+     *               configure associated GPIO as LOW/OUTPUT (logic "0")
+     *
+     * In high impendance, the MSX receives a logic "1" signal because of the
+     * MSX PSG circuit internal pull-ups.
+     * In logic "0", the MSX receives a logic "0" as the GPIO drives the signal to GND.
+     *
+     * WARNING! IMPORTANT! WARNING! IMPORTANT!
+     *
+     * We _MUST NOT_ and we _DON'T_ set the Arduino GPIOs controlling the MSX signals as HIGH/OUTPUT
+     * as that could fry the Arduino or PSG if this adapter is connected to the MSX _AND_ any
+     * MSX software _NOT DESIGNED FOR DRIVING JOYSTICKS_ but other peripherals is currently
+     * executing on the MSX in this specific circumstances:
+     * - adapter connected to port #1, TRG1 not pressed
+     *   - Bit0 of PSG Reg15 is clear (0), driving joystick #1 Pin6 to GND
+     *   - (GameCube controller A button is not pressed)
+     *   - Arduino D12/PB4 is incorrectly configured as HIGH/OUTPUT, driving joystick #1 Pin6 to +5V
+     *   - we get bus contention on joystick #1 Pin6 bus
+     * - adapter connected to port #1, TRG2 not pressed
+     *   - Bit1 of PSG Reg15 is clear (0), driving joystick #1 Pin7 to GND
+     *   - (GameCube controller B button is not pressed)
+     *   - Arduino D13/PB5 is incorrectly configured as HIGH/OUTPUT, driving joystick #1 Pin7 to +5V
+     *   - we get bus contention on joystick #1 Pin7 bus
+     * - adapter connected to port #2, TRG1 not pressed
+     *   - Bit2 of PSG Reg15 is clear (0), driving joystick #2 Pin6 to GND
+     *   - (GameCube controller A button is not pressed)
+     *   - Arduino D12/PB4 is incorrectly configured as HIGH/OUTPUT, driving joystick #2 Pin6 to +5V
+     *   - we get bus contention on joystick #2 Pin6 bus
+     * - adapter connected to port #2, TRG2 not pressed
+     *   - Bit3 of PSG Reg15 is clear (0), driving joystick #2 Pin7 to GND
+     *   - (GameCube controller B button is not pressed)
+     *   - Arduino D13/PB5 is incorrectly configured as HIGH/OUTPUT, driving joystick #2 Pin7 to +5V
+     *   - we get bus contention on joystick #2 Pin7 bus
+     *
+     * Thus we always _MUST_ and we _DO_ set GPIOs either as HIGH/INPUT ("Z") or LOW/OUTPUT ("0"),
+     * as this firmware does.
+     *
+     * Note that the described failure scenario is impossible for MSX software written to interface
+     * with joysticks because, in that case, bits 0-3 of PSG Reg15 are always set, not clear.
+     * But we keep it safe anyway, just in case.
+     *
+     * NOTE! IMPORTANT! NOTE! IMPORTANT!
+     *
+     * This specific firmware version supports msx-joydolphin v1 boards which use D13/PB5 connected
+     * to the TRG2 signal (pin7 of joystick connector).
+     * D13/PB5 is (unfortunately) also connected within the Arduino Nano V3 board internally to a LED
+     * (marked with "L" on the silkscreen) in series with a 1K resistor.
+     * That Arduino internal 1K resistor form a voltage divider with a 10K pull-up resistor present in the
+     * MSX circuitry (PSG uses open-collector with external pull-ups for those signals) which could
+     * cause TRG2 to misbehave [1].
+     * It will also cause the "L" LED to pull current from the MSX +5V via the MSX pull-up.
+     *
+     * To avoid problems, if D13/PB5 is used for TRG2 it is necessary to desolder either the "L" LED or
+     * the 1K resistor (in series with the "L" LED) from the Arduino Nano V3 board to convert D13/PB5
+     * to a "normal" GPIO.
+     *
+     * Note that in recent Arduino Nano V3 boards it is not possible to desolder the 1K resistor as it
+     * is part of a resistor array connected too to the other three LEDs (power, rx, tx).
+     *
+     * [1] https://forum.arduino.cc/t/arduino-nano-pin-d13-usage/474254
+     */
+
     /* write all signal states at once to MSX side */
     PORT_MSX_JOYSTICK = signals;
-    DDR_MSX_JOYSTICK = (~signals) | (1<<PORT_MSX_JOYSTICK_TRIGGER2);
+    DDR_MSX_JOYSTICK = ~signals;
+}
+
+inline void update_msx_signals(uint8_t signals)
+{
+    if (digitalRead(MSX_JOYSTICK_STROBE) == LOW) {
+        __update_msx_signals(signals);
+    } else {
+        __update_msx_signals(0xff);
+    }
 }
 
 void loop_gamecube_controller()
@@ -205,8 +298,8 @@ void loop_gamecube_controller()
 
     /*
      * MSX joystick signals:
-     * - 1=inactive (pull up to +5V)
-     * - 0=active (pull down to msx joystick ground, assumes pin8 is also pulled down to GND)
+     * - 1=inactive (high impedance, pulled up to +5V by MSX)
+     * - 0=active (pulled down to msx joystick GND)
      */
     uint8_t msx_joystick_signals = 0xff;
 
@@ -292,11 +385,6 @@ void loop_gamecube_controller()
             msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_TRIGGER2);
             DEBUG_PRINTLN("TRIG2");
         }
-
-        /*
-         * update led status state after a successfull Nintendo Gamecube
-         * controller update
-         */
     }
 
     /* unconditionally update MSX joystick signals */
