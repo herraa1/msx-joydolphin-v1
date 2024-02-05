@@ -22,12 +22,13 @@
  * The msx-joydolphin v1 adapter does not follow the joystick circuit diagram described in the
  * MSX Technical Data Book (Page 27, "1.4.6 Joysticks").
  *
- * The adapter puts signals for joystick arrows/buttons in high impedance mode (disconnected, pulled up to +5V by MSX pull-ups)
+ * This adapter puts signals for joystick arrows/buttons in high impedance mode (disconnected, pulled up to +5V by MSX pull-ups)
  * except if Pin8 is LOW and arrows/buttons are pressed in which case the corresponding signals are pulled down to GND.
  * Those signals are _never_ pulled down to GND if Pin8 is HIGH.
  *
  * As Pin8 level must be LOW to detect if joystick arrows/buttons are pressed, this is functionally equivalent to a standard
  * MSX joystick. But this adapter does not use directly Pin8 as a common signal: instead it uses GND when Pin8 is LOW (set to GND).
+ * Anyway, it passes the MSX-HID Tester v3.2 tests.
  */
 
 #include <avr/sleep.h>
@@ -45,11 +46,6 @@
 #else
   #define DEBUG_PRINTLN(x)
 #endif
-
-/*
- * Timing constants
- */
-#define _10ms   2499 /* OCR1 values for sleep period */
 
 /* Nintendo Gamecube controller pad axis valid range */
 #define GCN_AXIS_MIN 0
@@ -72,13 +68,13 @@ const int PORT_MSX_JOYSTICK_TRIGGER1 = 4; /* PB4, MSX joystick pin6 */
 const int PORT_MSX_JOYSTICK_TRIGGER2 = 5; /* PB5, MSX joystick pin7 */ /* LED_BUILTIN */
 
 /* Arduino Nano pin for MSX joystick pin8 signal */
-const int MSX_JOYSTICK_STROBE   = 2; /* PD2, MSX joystick pin8 */
+const int MSX_JOYSTICK_STROBE   = PD2; /* PD2, MSX joystick pin8 */
 
 /* Nintendo Gamecube joystick controller */
 CGamecubeController GamecubeController1(7); /* PD7 for DAT I/O */
 
-/* sleeping while a wavebird is connected doesn't work reliably */
-volatile bool sleep_is_safe = false;
+volatile uint8_t real_msx_joystick_signals = 0xff;
+volatile uint8_t last_msx_joystick_signals = 0xff;
 
 /*
  * Discrete thresholds for Nintengo Gamecube joystick analog pad axis:
@@ -92,32 +88,15 @@ int axis_threshold_min, axis_threshold_max;
 /* serial output width control */
 uint8_t output_width_count = 0;
 
-/*
- * Timer 1 CTC Interrupt handler
- */
-ISR(TIMER1_COMPA_vect)
-{
-    set_timer1(_10ms); 
-}
+/* interrupt-related statistics */
+volatile unsigned int stats_ints, stats_hi, stats_lo, stats_hi_lo, stats_lo_hi, stats_hi_hi, stats_lo_lo, stats_hi_consecutive, stats_lo_consecutive;
 
-/*
- * Timer 1 timeout configuration
- */
-inline void set_timer1(uint16_t overflow_ticks)
-{
-    cli(); /* disable interrupts */
+/* pin8 state emulation, after discarding spurious interrupts */
+static uint8_t pin8_state = !!digitalRead(MSX_JOYSTICK_STROBE);
 
-    TCCR1A = 0; 
-    TCCR1B = 0;
-    TCNT1  = 0; /* initialize counter value to 0 */
-    OCR1A = overflow_ticks; /* set compare register */
+/* microsecond timestamps for pin8 state/transitions */
+static unsigned long last_hi, last_lo, last_lo_hi, last_hi_lo, last_transition;
 
-    TCCR1B |= (1 << WGM12);	                 /* CTC mode */
-    TCCR1B |= (0<<CS12)|(1<<CS11)|(1<<CS10); /* prescaler = 64 */
-    TIMSK1 |= (1 << OCIE1A);                 /* ISR Timer1/Compare */
-
-    sei(); /* enable interrupts */
-}
 
 void print_hex8(uint8_t data)
 {
@@ -150,9 +129,38 @@ void print_rolling_sequence(void)
         rolling_index = 0;
 }
 
-inline bool is_wired_controller(uint16_t device)
+void pin8_emulation()
 {
-    return (device & 0xff) == 0x09;
+    unsigned long interrupt_time = micros();
+
+    stats_ints++;
+    if (digitalRead(MSX_JOYSTICK_STROBE) == HIGH) {
+        last_hi = interrupt_time;
+        stats_hi++;
+        if (!pin8_state) {
+            last_lo_hi = last_transition = interrupt_time;
+            pin8_state = 1;
+            /* pin8 transitioned to high, switch immediately to high impedance mode */
+            __update_msx_signals(0xff);
+            stats_hi_consecutive = 1;
+            stats_lo_hi++;
+        } else {
+            stats_hi_hi++;
+            stats_hi_consecutive++;
+        }
+    } else {
+        last_lo = interrupt_time;
+        stats_lo++;
+        if (pin8_state) {
+            last_hi_lo = last_transition = interrupt_time;
+            pin8_state = 0;
+            stats_lo_consecutive = 1;
+            stats_hi_lo++;
+        } else {
+            stats_lo_lo++;
+            stats_lo_consecutive++;
+        }
+    }
 }
 
 void setup()
@@ -163,9 +171,12 @@ void setup()
     pinMode(MSX_JOYSTICK_STROBE, INPUT_PULLUP);
     __update_msx_signals(0xff);
 
+    /* supervise pin8 state using interrupt service routine */
+    attachInterrupt(digitalPinToInterrupt(MSX_JOYSTICK_STROBE), pin8_emulation, CHANGE);
+
     /* use the serial port for debugging purposes */
     Serial.begin(9600);
-    Serial.println("msx-joydolphin-v1");
+    Serial.println("msx-joydolphin-v1 20240205_1");
 
     /*
      * Calculate Nintendo Gamecube controller analog pad thresholds.
@@ -177,37 +188,17 @@ void setup()
     axis_threshold_max = GCN_AXIS_MAX - axis_threshold;
 
     GamecubeController1.begin(); /* initialize controller */
-    delayMicroseconds(100);      /* allow some time for initialization */
-
-    /* setup Timer 1 to wake up processor */
-    set_timer1(_10ms);
 }
 
 void loop()
 {
     loop_gamecube_controller();
-
-    if (sleep_is_safe) {
-        /* put CPU to sleep */
-        set_sleep_mode(SLEEP_MODE_IDLE);
-        sleep_enable();
-
-        /*
-        * Note: As Timer 0 is used by Arduino housekeeping it should be turned off
-        * otherwise it will wake up CPU and hassle the interrupt interleave
-        * mechanism used by this code
-        */
-        power_timer0_disable();
-
-        sleep_mode();
-        sleep_disable();
-    }
 }
 
 inline void __update_msx_signals(uint8_t signals)
 {
     /*
-     * signals
+     * signals variable bit definitions
      * bit5  bit4  bit3  bit2  bit1  bit0
      * TRG2  TRG1  RIGHT LEFT  DOWN  UP
      *
@@ -253,7 +244,9 @@ inline void __update_msx_signals(uint8_t signals)
      * Note that the described failure scenario is impossible for MSX software written to interface
      * with joysticks because, in that case, bits 0-3 of PSG Reg15 are always set, not clear.
      * But we keep it safe anyway, just in case.
-     *
+     */
+
+    /*
      * NOTE! IMPORTANT! NOTE! IMPORTANT!
      *
      * This specific firmware version supports msx-joydolphin v1 boards which use D13/PB5 connected
@@ -265,27 +258,33 @@ inline void __update_msx_signals(uint8_t signals)
      * cause TRG2 to misbehave [1].
      * It will also cause the "L" LED to pull current from the MSX +5V via the MSX pull-up.
      *
-     * To avoid problems, if D13/PB5 is used for TRG2 it is necessary to desolder either the "L" LED or
-     * the 1K resistor (in series with the "L" LED) from the Arduino Nano V3 board to convert D13/PB5
-     * to a "normal" GPIO.
-     *
-     * Note that in recent Arduino Nano V3 boards it is not possible to desolder the 1K resistor as it
-     * is part of a resistor array connected too to the other three LEDs (power, rx, tx).
+     * To avoid problems with msx-joydolphin v1 Build1 adapters it is necessary to (choose one):
+     * - Add a external pull up of 560 Ohm from D13/PB5 to +5V and keep the "L" LED and 1K resistor.
+     * - Desolder either the "L" LED or the 1K resistor (in series with the "L" LED) from the Arduino
+     *   Nano V3 board to convert D13/PB5 to a "normal" GPIO.
+     *   Note that in recent Arduino Nano V3 boards it is not possible to desolder the 1K resistor as it
+     *   is part of a resistor array connected too to the other three LEDs (power, rx, tx).
+     * For Build2 and later adapters (when available) nothing needs to be done.
      *
      * [1] https://forum.arduino.cc/t/arduino-nano-pin-d13-usage/474254
      */
 
-    /* write all signal states at once to MSX side */
-    PORT_MSX_JOYSTICK = signals;
-    DDR_MSX_JOYSTICK = ~signals;
-}
-
-inline void update_msx_signals(uint8_t signals)
-{
-    if (digitalRead(MSX_JOYSTICK_STROBE) == LOW) {
-        __update_msx_signals(signals);
-    } else {
-        __update_msx_signals(0xff);
+    /*
+     * Keep MSX-HID happy.
+     *
+     * When using MSX HID Tester we observed that we need to keep outputs in high impedance for at least
+     * 30uS after a pin8 low to high transition, otherwise arrow/button presses are not detected properly
+     * by the software. Meh.
+     * Note that the pin8 HIGH cycle of the MSX-HID detection state is ~72.7uS, as measured from a
+     * Omega Home Computer.
+     */
+    
+    unsigned long curr_update = micros();
+    if (signals == 0xff || (curr_update - last_lo_hi) > 30) {
+        /* write all signal states at once to MSX side */
+        PORT_MSX_JOYSTICK = signals;
+        DDR_MSX_JOYSTICK = ~signals;
+        last_msx_joystick_signals = signals;
     }
 }
 
@@ -296,97 +295,91 @@ void loop_gamecube_controller()
     uint16_t device;
     Gamecube_Report_t report;
 
-    /*
-     * MSX joystick signals:
-     * - 1=inactive (high impedance, pulled up to +5V by MSX)
-     * - 0=active (pulled down to msx joystick GND)
-     */
-    uint8_t msx_joystick_signals = 0xff;
-
     is_connected = GamecubeController1.connected();
     if (!is_connected) {
-        /* write rolling sequence while not connected */
-        print_rolling_sequence();
-        /* wrap output at 80 columns ... */
-        if (output_width_count++ > 79) {
-            output_width_count = 0;
-            Serial.println("");
-        }
-        was_connected = false;
-    } else {
-        if (!was_connected) {
-            Serial.print("READY ");
-            device = GamecubeController1.getStatus().device;
-            print_hex16(device);
-            /* sleep is safe only for wired controllers */
-            sleep_is_safe = is_wired_controller(device);
-            if (sleep_is_safe)
-                Serial.print(" sleeping");
-            Serial.println("!");
-            output_width_count = 0;
-            was_connected = true;
-        }
+        /*
+         * Make sure that no arrow/buttons stay pressed when
+         * a gamecube controller is not connected.
+         */
+        real_msx_joystick_signals = 0xff;
     }
 
-    if (GamecubeController1.read()) {
-        report = GamecubeController1.getReport();
-
-        /* Directional buttons (D-Pad) */
-        if (report.dup) {
-            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_UP);
-            DEBUG_PRINTLN("DUP");
-        }
-        if (report.ddown) {
-            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_DOWN);
-            DEBUG_PRINTLN("DDOWN");
-        }
-        if (report.dleft) {
-            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_LEFT);
-            DEBUG_PRINTLN("DLEFT");
-        }
-        if (report.dright) {
-            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_RIGHT);
-            DEBUG_PRINTLN("DRIGHT");
+    /* 
+     * Do not bother polling the gamecube controller when the MSX
+     * is not pulling pin8 low. That way we keep the loop time short
+     * when pin8 is high.
+     */
+    if (!pin8_state) {
+        if (!is_connected) {
+            /* write rolling sequence while not connected */
+            print_rolling_sequence();
+            /* wrap output at 80 columns ... */
+            if (output_width_count++ > 79) {
+                output_width_count = 0;
+                Serial.println("");
+            }
+            was_connected = false;
+        } else {
+            if (!was_connected) {
+                was_connected = true;
+                device = GamecubeController1.getStatus().device;
+                Serial.print("READY ");
+                print_hex16(device);
+                Serial.println("!");
+                output_width_count = 0;
+            }
         }
 
         /*
-         * Digital Equivalent to directional buttons using the analog stick.
-         * From center/origin: up and right is positive, down and left is negative.
+         * We need to read even if disconnected to make sure
+         * that wavebird controllers connect properly (they use
+         * a two stage connection process, as the dongle is always
+         * connected but the controller only connects when activated).
          */
+        if (GamecubeController1.read()) {
+            uint8_t msx_joystick_signals = 0xff;
+            report = GamecubeController1.getReport();
 
-        /* before activating UP check that DOWN is not activated */
-        if ((report.yAxis > axis_threshold_max) && (msx_joystick_signals & (1<<PORT_MSX_JOYSTICK_DOWN))) {
-            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_UP);
-            DEBUG_PRINTLN("UP");
-        }
-        /* before activating DOWN check that UP is not activated */
-        if ((report.yAxis < axis_threshold_min) && (msx_joystick_signals & (1<<PORT_MSX_JOYSTICK_UP))) {
-            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_DOWN);
-            DEBUG_PRINTLN("DOWN");
-        }
+            /* Directional buttons (D-Pad) */
+            if (report.dup)
+                msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_UP);
+            if (report.ddown)
+                msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_DOWN);
+            if (report.dleft)
+                msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_LEFT);
+            if (report.dright)
+                msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_RIGHT);
 
-        /* before activating LEFT check that RIGHT is not activated */
-        if ((report.xAxis < axis_threshold_min) && (msx_joystick_signals & (1<<PORT_MSX_JOYSTICK_RIGHT))) {
-            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_LEFT);
-            DEBUG_PRINTLN("LEFT");
-        }
-        /* before activating RIGHT check that LEFT is not activated */
-        if ((report.xAxis > axis_threshold_max) && (msx_joystick_signals & (1<<PORT_MSX_JOYSTICK_LEFT))) {
-            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_RIGHT);
-            DEBUG_PRINTLN("RIGHT");
-        }
+            /*
+            * Digital Equivalent to directional buttons using the analog stick.
+            * From center/origin: up and right is positive, down and left is negative.
+            */
 
-        /* trigger buttons */
-        if (report.a) {
-            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_TRIGGER1);
-            DEBUG_PRINTLN("TRIG1");
-        }
-        if (report.b) {
-            msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_TRIGGER2);
-            DEBUG_PRINTLN("TRIG2");
+            /* before activating UP check that DOWN is not activated */
+            if ((report.yAxis > axis_threshold_max) && (msx_joystick_signals & (1<<PORT_MSX_JOYSTICK_DOWN)))
+                msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_UP);
+
+            /* before activating DOWN check that UP is not activated */
+            if ((report.yAxis < axis_threshold_min) && (msx_joystick_signals & (1<<PORT_MSX_JOYSTICK_UP)))
+                msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_DOWN);
+
+            /* before activating LEFT check that RIGHT is not activated */
+            if ((report.xAxis < axis_threshold_min) && (msx_joystick_signals & (1<<PORT_MSX_JOYSTICK_RIGHT)))
+                msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_LEFT);
+
+            /* before activating RIGHT check that LEFT is not activated */
+            if ((report.xAxis > axis_threshold_max) && (msx_joystick_signals & (1<<PORT_MSX_JOYSTICK_LEFT)))
+                msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_RIGHT);
+
+            /* trigger buttons */
+            if (report.a)
+                msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_TRIGGER1);
+            if (report.b)
+                msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_TRIGGER2);
+
+            real_msx_joystick_signals = msx_joystick_signals;
         }
     }
 
-    /* unconditionally update MSX joystick signals */
-    update_msx_signals(msx_joystick_signals);
+    __update_msx_signals(real_msx_joystick_signals);
 }
