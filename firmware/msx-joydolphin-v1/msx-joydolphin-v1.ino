@@ -24,7 +24,7 @@
  *
  * This adapter puts signals for joystick arrows/buttons in high impedance mode (disconnected, pulled up to +5V by MSX pull-ups)
  * except if Pin8 is LOW and arrows/buttons are pressed in which case the corresponding signals are pulled down to GND.
- * Those signals are _never_ pulled down to GND if Pin8 is HIGH.
+ * Those signals are _never_ pulled down to GND when Pin8 is detected as HIGH.
  *
  * As Pin8 level must be LOW to detect if joystick arrows/buttons are pressed, this is functionally equivalent to a standard
  * MSX joystick. But this adapter does not use directly Pin8 as a common signal: instead it uses GND when Pin8 is LOW (set to GND).
@@ -68,13 +68,12 @@ const int PORT_MSX_JOYSTICK_TRIGGER1 = 4; /* PB4, MSX joystick pin6 */
 const int PORT_MSX_JOYSTICK_TRIGGER2 = 5; /* PB5, MSX joystick pin7 */ /* LED_BUILTIN */
 
 /* Arduino Nano pin for MSX joystick pin8 signal */
-const int MSX_JOYSTICK_STROBE   = PD2; /* PD2, MSX joystick pin8 */
+const int MSX_JOYSTICK_STROBE   = 2; /* PD2, MSX joystick pin8 */
 
 /* Nintendo Gamecube joystick controller */
 CGamecubeController GamecubeController1(7); /* PD7 for DAT I/O */
 
 volatile uint8_t real_msx_joystick_signals = 0xff;
-volatile uint8_t last_msx_joystick_signals = 0xff;
 
 /*
  * Discrete thresholds for Nintengo Gamecube joystick analog pad axis:
@@ -89,14 +88,10 @@ int axis_threshold_min, axis_threshold_max;
 uint8_t output_width_count = 0;
 
 /* interrupt-related statistics */
-volatile unsigned int stats_ints, stats_hi, stats_lo, stats_hi_lo, stats_lo_hi, stats_hi_hi, stats_lo_lo, stats_hi_consecutive, stats_lo_consecutive;
+unsigned int stats_hi, stats_lo, stats_hi_lo, stats_lo_hi, stats_hi_hi, stats_lo_lo, stats_hi_consecutive, stats_lo_consecutive;
 
 /* pin8 state emulation, after discarding spurious interrupts */
-static uint8_t pin8_state = !!digitalRead(MSX_JOYSTICK_STROBE);
-
-/* microsecond timestamps for pin8 state/transitions */
-static unsigned long last_hi, last_lo, last_lo_hi, last_hi_lo, last_transition;
-
+volatile static uint8_t pin8_state;
 
 void print_hex8(uint8_t data)
 {
@@ -131,35 +126,29 @@ void print_rolling_sequence(void)
 
 void pin8_emulation()
 {
-    unsigned long interrupt_time = micros();
-
-    stats_ints++;
     if (digitalRead(MSX_JOYSTICK_STROBE) == HIGH) {
-        last_hi = interrupt_time;
+        /* pin8 transitioned to high, switch immediately to high impedance mode */
+        __update_msx_signals(0xff);
         stats_hi++;
         if (!pin8_state) {
-            last_lo_hi = last_transition = interrupt_time;
-            pin8_state = 1;
-            /* pin8 transitioned to high, switch immediately to high impedance mode */
-            __update_msx_signals(0xff);
             stats_hi_consecutive = 1;
             stats_lo_hi++;
         } else {
             stats_hi_hi++;
             stats_hi_consecutive++;
         }
+        pin8_state = 1;
     } else {
-        last_lo = interrupt_time;
+        __update_msx_signals(real_msx_joystick_signals);
         stats_lo++;
         if (pin8_state) {
-            last_hi_lo = last_transition = interrupt_time;
-            pin8_state = 0;
             stats_lo_consecutive = 1;
             stats_hi_lo++;
         } else {
             stats_lo_lo++;
             stats_lo_consecutive++;
         }
+        pin8_state = 0;
     }
 }
 
@@ -170,13 +159,14 @@ void setup()
     /* initialize all joystick signals to high impedance */
     pinMode(MSX_JOYSTICK_STROBE, INPUT_PULLUP);
     __update_msx_signals(0xff);
+    pin8_state = !!digitalRead(MSX_JOYSTICK_STROBE);
 
     /* supervise pin8 state using interrupt service routine */
     attachInterrupt(digitalPinToInterrupt(MSX_JOYSTICK_STROBE), pin8_emulation, CHANGE);
 
     /* use the serial port for debugging purposes */
     Serial.begin(9600);
-    Serial.println("msx-joydolphin-v1 20240205_1");
+    Serial.println("msx-joydolphin-v1 20240210_1");
 
     /*
      * Calculate Nintendo Gamecube controller analog pad thresholds.
@@ -195,7 +185,7 @@ void loop()
     loop_gamecube_controller();
 }
 
-inline void __update_msx_signals(uint8_t signals)
+inline void __update_msx_signals(uint8_t __signals)
 {
     /*
      * signals variable bit definitions
@@ -269,23 +259,12 @@ inline void __update_msx_signals(uint8_t signals)
      * [1] https://forum.arduino.cc/t/arduino-nano-pin-d13-usage/474254
      */
 
-    /*
-     * Keep MSX-HID happy.
-     *
-     * When using MSX HID Tester we observed that we need to keep outputs in high impedance for at least
-     * 30uS after a pin8 low to high transition, otherwise arrow/button presses are not detected properly
-     * by the software. Meh.
-     * Note that the pin8 HIGH cycle of the MSX-HID detection state is ~72.7uS, as measured from a
-     * Omega Home Computer.
-     */
-    
-    unsigned long curr_update = micros();
-    if (signals == 0xff || (curr_update - last_lo_hi) > 30) {
-        /* write all signal states at once to MSX side */
-        PORT_MSX_JOYSTICK = signals;
-        DDR_MSX_JOYSTICK = ~signals;
-        last_msx_joystick_signals = signals;
-    }
+    uint8_t signals = 0xff;
+    if (digitalRead(MSX_JOYSTICK_STROBE) == LOW)
+        signals = __signals;
+    /* write all signal states at once to MSX side */
+    PORT_MSX_JOYSTICK = (signals) & 0x3f;
+    DDR_MSX_JOYSTICK = (~signals) & 0x3f;
 }
 
 void loop_gamecube_controller()
@@ -336,7 +315,7 @@ void loop_gamecube_controller()
          * a two stage connection process, as the dongle is always
          * connected but the controller only connects when activated).
          */
-        if (GamecubeController1.read()) {
+        if (stats_lo_consecutive == 1 && GamecubeController1.read()) {
             uint8_t msx_joystick_signals = 0xff;
             report = GamecubeController1.getReport();
 
@@ -378,8 +357,7 @@ void loop_gamecube_controller()
                 msx_joystick_signals &= ~(1<<PORT_MSX_JOYSTICK_TRIGGER2);
 
             real_msx_joystick_signals = msx_joystick_signals;
+            __update_msx_signals(real_msx_joystick_signals);
         }
     }
-
-    __update_msx_signals(real_msx_joystick_signals);
 }
