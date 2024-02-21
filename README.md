@@ -170,7 +170,7 @@ Gamecube controller IDs
 
 [^1]: https://www.msx.org/wiki/General_Purpose_port
 [^2]: https://www.mouser.es/datasheet/2/163/DS_FT232R-11534.pdf
-
+[^3]: https://www.msx.org/wiki/Joystick/joypad_controller (see "Undesired Conditions")
 
 ## Image Sources
 
