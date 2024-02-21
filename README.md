@@ -57,9 +57,9 @@ The MSX joystick extension cable loose end is wired according to the following p
 | 3            | Grey                   | LEFT   | PB2/D10/13                          |
 | 2            | Black                  | DOWN   | PB1/D9/12                           |
 | 1            | Red                    | UP     | PB0/D8/11                           |
-| 6            | Green                  | TRIG1  | PB4/D12/15                          |
-| 7            | White                  | TRIG2  | PB5/D13/16                          |
-| 8            | Blue                   | STROBE | PD2/D2/5                            |
+| 6            | Green                  | TRIGA  | PB4/D12/15                          |
+| 7            | White                  | TRIGB  | PB5/D13/16                          |
+| 8            | Blue                   | OUT    | PD2/D2/5                            |
 | 9            | Yellow                 | GND    | _/GND/4,29                          |
 
 The msx-joydolphin-v1 adapter ignores the MSX general purpose pin8 (OUT) signal. This is not a problem in general, but can cause incompatibilities with specific software, like MSX-HID [^2], which uses pin8 to try to guess which
