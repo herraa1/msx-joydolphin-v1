@@ -238,9 +238,7 @@ void loop_gamecube_controller()
          * a gamecube controller is not connected.
          */
         curr_msx_joystick_signals = 0xff;
-    }
 
-    if (!is_connected) {
         /* write rolling sequence while not connected */
         print_rolling_sequence();
         /* wrap output at 80 columns ... */
