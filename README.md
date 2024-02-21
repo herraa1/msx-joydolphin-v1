@@ -62,6 +62,12 @@ The MSX joystick extension cable loose end is wired according to the following p
 | 8            | Blue                   | STROBE | PD2/D2/5                            |
 | 9            | Yellow                 | GND    | _/GND/4,29                          |
 
+The msx-joydolphin-v1 adapter ignores the MSX general purpose pin8 (OUT) signal. This is not a problem in general, but can cause incompatibilities with specific software, like MSX-HID [^2], which uses pin8 to try to guess which
+kind of device is connected to a MSX general purpose I/O port. For MSX-HID, holding the Trigger B button, will put the software in FM-Towns compatible mode which will make the adapter functional.
+
+The adapter uses open collector outputs (putting the related Arduino Nano pins in INPUT mode with pull-up registers active when in logic "1" and in OUTPUT mode LOW when in logic "0") which makes the adapter safer [^3] than the
+standard MSX joystick schematic depicted in the MSX Technical Data Book, as it avoids a series of undesired conditions that can lead to bus contention/short circuits.
+
 Power is drawn from the +5V signal of the MSX general purpose port, which is capable of delivering up to 50mA [^1].
 The msx-joydolphin v1 draws below 20mA from the port when a wired controller is connected, so it is on the safe side. Anyway, the msx-joydolphin adapter uses a Positive Temperature Coeficient (PTC) resettable fuse of 50mA (F1) to limit current in case something goes wrong.
 
