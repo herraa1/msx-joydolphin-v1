@@ -4,6 +4,8 @@
 
 Connect [Nintendo Gamecube controllers](https://en.wikipedia.org/wiki/GameCube_controller) to [MSX computers](https://www.msx.org/wiki/).
 
+> [!NOTE]
+> [msx-joydolphin v2](https://github.com/herraa1/msx-joydolphin-v2) is now available!
 
 ## Introduction
 
